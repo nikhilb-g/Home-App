@@ -1,9 +1,8 @@
 // Offline shell for HomeNode. Bump CACHE when any listed file changes.
-const CACHE = "homenode-v1";
+const CACHE = "homenode-v5";
 const ASSETS = [
-  "./", "./index.html", "./manifest.webmanifest",
-  "./vendor/mqtt.min.js", "./fonts/manrope-latin-wght-normal.woff2",
-  "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png",
+  "./", "./index.html", "./manifest.webmanifest", "./mqtt.min.js", "./manrope.woff2",
+  "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png",
 ];
 
 self.addEventListener("install", (e) => {

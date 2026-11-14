@@ -8,11 +8,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<script src="vendor/mqtt.min.js"></script>
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<script src="mqtt.min.js"></script>
 <style>
-@font-face{font-family:"Manrope";src:url(fonts/manrope-latin-wght-normal.woff2) format("woff2");font-weight:200 800;font-display:swap}
+@font-face{font-family:"Manrope";src:url(manrope.woff2) format("woff2");font-weight:200 800;font-display:swap}
 :root{
   --bg:#EEF2EC; --surface:#F8FAF6; --ink:#17241C; --muted:#5B6B60; --line:#D3DCD2;
   --water:#1F6FB2; --water-soft:#D6E6F4; --leaf:#2F7D4F; --leaf-soft:#D7EBDD;
@@ -159,7 +159,7 @@ input[type=range]{width:100%;accent-color:var(--leaf)}
 <main>
   <section class="empty" id="emptyView">
     <h2 id="emptyTitle">Connect to your broker</h2>
-    <p id="emptyText">Enter your broker address and the app username to see your devices.</p>
+    <p id="emptyText">Enter the app password to see your devices.</p>
     <button class="btn primary" id="emptyBtn">Open settings</button>
   </section>
 
@@ -222,6 +222,7 @@ input[type=range]{width:100%;accent-color:var(--leaf)}
     <summary>Controller</summary>
     <dl class="kv" id="health"></dl>
     <div class="row"><button class="btn" id="pingBtn">Check response time</button><button class="btn danger" id="rebootBtn">Restart</button></div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="wifiBtn">Change WiFi network</button></div>
   </details>
   <details class="block" id="logBlock" hidden>
     <summary>Activity</summary>
@@ -237,6 +238,7 @@ input[type=range]{width:100%;accent-color:var(--leaf)}
   <label class="field"><span>Username</span><input id="fUser" autocomplete="username" autocapitalize="off"></label>
   <label class="field"><span>Password</span><input id="fPass" type="password" autocomplete="current-password"></label>
   <p class="err" id="setErr"></p>
+  <button type="button" class="link" id="copyLinkBtn">Copy setup link for another device</button>
   <div class="sheet-actions"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" id="setSave" value="save">Save and connect</button></div>
 </form></dialog>
 
@@ -272,6 +274,8 @@ input[type=range]{width:100%;accent-color:var(--leaf)}
 <script>
 "use strict";
 const ROOT = "hn";
+// Non-secret defaults, pre-filled on a new device. Never put the password here: this file is public.
+const DEFAULTS = {host: "x66e5c61.ala.asia-southeast1.emqxsl.com", port: "8084", user: "dash"};
 const KINDS = ["status", "info", "state", "telemetry", "event", "pong", "config", "history"];
 const CEIL = {max_run_s: 900, max_daily_s: 1800};
 const $ = (id) => document.getElementById(id);
@@ -291,6 +295,10 @@ function saveSettings(s) { try { localStorage.setItem("hn-app", JSON.stringify(s
 function connect() {
   const s = loadSettings();
   if (!s || !s.host) { render(); return; }
+  if (typeof mqtt === "undefined") {
+    setConn(false, "The app’s file mqtt.min.js is missing from the website. Upload it next to index.html, then reload.");
+    return;
+  }
   if (S.client) { S.client.end(true); S.client = null; }
   setConn(false, "Connecting…");
   S.client = mqtt.connect(`wss://${s.host}:${s.port || 8084}/mqtt`, {
@@ -412,7 +420,7 @@ function render() {
   if (!d) {
     const has = s && s.host;
     $("emptyTitle").textContent = has ? (S.connected ? "Waiting for devices" : "Connecting…") : "Connect to your broker";
-    $("emptyText").textContent = has ? (S.connected ? "Devices appear here as soon as they report in. Check that the controller is powered." : "") : "Enter your broker address and the app username to see your devices.";
+    $("emptyText").textContent = has ? (S.connected ? "Devices appear here as soon as they report in. Check that the controller is powered." : "") : "Enter the app password to see your devices.";
     $("emptyBtn").hidden = !!(has && S.connected);
     return;
   }
@@ -482,9 +490,8 @@ function renderGeneric(d) {
   const act = canAct(d);
   if (role === "test") {
     $("genControls").innerHTML = `<div class="row" style="justify-content:flex-start;gap:10px">
-      <button class="btn primary" data-led="ON" ${act ? "" : "disabled"}>Light on</button>
-      <button class="btn" data-led="OFF" ${act ? "" : "disabled"}>Light off</button>
-      <span class="muted">Light is ${st.led ? "on" : "off"}</span></div>`;
+      <button class="btn ${st.led ? "primary" : ""}" data-led="ON" aria-pressed="${!!st.led}" ${act ? "" : "disabled"}>Light on</button>
+      <button class="btn ${st.led ? "" : "primary"}" data-led="OFF" aria-pressed="${!st.led}" ${act ? "" : "disabled"}>Light off</button></div>`;
     $("genControls").querySelectorAll("[data-led]").forEach((b) => b.onclick = () => send(d.id, "set/led", b.dataset.led));
   } else $("genControls").innerHTML = "";
   $("genState").innerHTML = Object.entries(st).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(JSON.stringify(v))}</dd>`).join("");
@@ -502,7 +509,7 @@ function renderHealth(d) {
     ["Device ID", d.id],
   ];
   $("health").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("");
-  $("pingBtn").disabled = $("rebootBtn").disabled = !canAct(d);
+  $("pingBtn").disabled = $("rebootBtn").disabled = $("wifiBtn").disabled = !canAct(d);
 }
 
 function renderLog(d) {
@@ -579,7 +586,8 @@ function waterChart(h) {
 // ---------- dialogs ----------
 function openSettings() {
   const s = loadSettings() || {};
-  $("fHost").value = s.host || ""; $("fPort").value = s.port || "8084"; $("fUser").value = s.user || ""; $("fPass").value = s.pass || "";
+  $("fHost").value = s.host || DEFAULTS.host; $("fPort").value = s.port || DEFAULTS.port; $("fUser").value = s.user || DEFAULTS.user; $("fPass").value = s.pass || "";
+  $("copyLinkBtn").hidden = !(s.host && s.pass);
   $("setErr").textContent = ""; $("setDlg").showModal();
 }
 $("setBtn").onclick = openSettings; $("emptyBtn").onclick = openSettings;
@@ -593,6 +601,23 @@ $("setSave").onclick = (e) => {
   S.devices = {}; S.selected = null;
   setTimeout(connect, 0);
 };
+$("copyLinkBtn").onclick = async () => {
+  const s = loadSettings(); if (!s) return;
+  const code = btoa(unescape(encodeURIComponent(JSON.stringify(s)))).replace(/=+$/, "");
+  const link = location.origin + location.pathname + "#setup=" + code;
+  try { await navigator.clipboard.writeText(link); toast("Setup link copied. It contains your password, so only send it to yourself."); }
+  catch (e) { prompt("Copy this link. It contains your password, so only send it to yourself:", link); }
+};
+// Opening a setup link saves the details on this device, then wipes the link from the address bar.
+(function readSetupLink() {
+  const m = location.hash.match(/^#setup=([A-Za-z0-9+/]+)$/);
+  if (!m) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  try {
+    const s = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+    if (s && s.host && s.user && s.pass) { saveSettings({host: s.host, port: s.port || "8084", user: s.user, pass: s.pass}); setTimeout(() => toast("Connection details saved on this device"), 300); }
+  } catch (e) { setTimeout(() => toast("That setup link is damaged. Copy it again."), 300); }
+})();
 ["fHost", "fPort", "fUser", "fPass"].forEach((id) => $(id).addEventListener("input", () => $("setErr").textContent = ""));
 
 $("devBtn").onclick = () => {
@@ -677,6 +702,11 @@ $("autoToggle").onchange = (e) => {
 };
 document.querySelectorAll("[data-h]").forEach((b) => b.onclick = () => { S.histView = b.dataset.h; if (dev()) renderChart(dev()); });
 $("pingBtn").onclick = () => send(dev().id, "sys", "ping:" + Date.now());
+$("wifiBtn").onclick = () => {
+  const d = dev();
+  if (!confirm(`Open WiFi setup on ${deviceName(d)}?\n\nIt creates a WiFi network called "HomeNode-${d.id}" for 5 minutes. Join it from your phone with the setup password and pick the new network. Watering and the current connection keep running meanwhile.`)) return;
+  if (send(d.id, "sys", "wifi_portal")) toast(`Join "HomeNode-${d.id}" within 5 minutes`);
+};
 $("rebootBtn").onclick = () => { if (confirm(`Restart ${deviceName(dev())}? Any watering in progress stops.`)) send(dev().id, "sys", "reboot"); };
 
 // countdown tick while watering
